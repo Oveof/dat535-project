@@ -20,6 +20,7 @@
               venvShellHook
               pyright
               requests
+              pyspark
             ]);
         };
       });

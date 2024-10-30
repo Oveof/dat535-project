@@ -11,7 +11,7 @@ def daterange(start_date: date, end_date: date):
     for n in range(days):
         yield start_date + timedelta(n)
 
-from_year = 2023
+from_year = 2021
 to_year = 2023
 total_years = to_year - from_year
 
@@ -27,7 +27,10 @@ for i, single_date in enumerate(date_range):
     day = single_date.day if single_date.day >= 10 else "0" + str(single_date.day)
     url = f"https://www.hvakosterstrommen.no/api/v1/prices/{year}/{month}-{day}_NO4.json" 
     response = requests.get(url, headers=headers)
-    data.append(response.json())
+    if response.status_code == 200:
+        data.append(response.json())
+    else:
+        print(f"ERROR: {response.status_code}")
     time.sleep(1)
 
 
