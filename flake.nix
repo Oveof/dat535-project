@@ -21,6 +21,7 @@
               pyright
               requests
               pyspark
+              netcdf4
             ]);
         };
       });

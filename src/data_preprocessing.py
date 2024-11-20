@@ -1,50 +1,56 @@
 from pyspark import SparkContext
+import csv
+from io import StringIO
 from datetime import datetime
-import json
-
-from pyspark import SparkContext
-import json
 
 # Initialize SparkContext
-sc = SparkContext("local", "Data Preprocessing")
+sc = SparkContext("local", "CSV Data Preprocessing")
 
-# Load JSON file
-file_path = "./dataset/test.json"
-data = sc.textFile(file_path).map(lambda line: json.loads(line))
+# Load the CSV file
+file_path = "/mnt/data/data_file.csv"
+data = sc.textFile(file_path)
 
-# 1. Filter out records with missing or null critical values
-cleaned_data = data.filter(lambda record: record['konsesjonar'] is not None and record['tariffdato'] is not None)
+# Define a function to parse each line as CSV
+def parse_csv(line):
+    # Use Python's CSV reader to handle parsing
+    reader = csv.reader(StringIO(line))
+    return next(reader)
 
-# 2. Remove duplicates by creating a unique key and using reduceByKey
-# Assuming 'organisasjonsnr' and 'tariffdato' create a unique entry
-unique_data = cleaned_data.map(lambda record: ((record['organisasjonsnr'], record['tariffdato']), record)) \
-                          .reduceByKey(lambda x, _: x) \
-                          .map(lambda x: x[1])
+# Parse each line in the CSV
+parsed_data = data.map(parse_csv)
 
-# 3. Standardize fields (e.g., ensure all dates are in 'YYYY-MM-DD' format)
-from datetime import datetime
+# Filter out header and rows with missing critical fields (e.g., if column 1 and 2 are critical)
+header = parsed_data.first()  # Assumes the first row is the header
+data_no_header = parsed_data.filter(lambda row: row != header)
 
-def standardize_dates(record):
-    date_fields = ['tariffdato', 'periodeFraDato', 'periodeTilDato']
-    for field in date_fields:
-        if field in record:
-            try:
-                # Convert to desired date format
-                record[field] = datetime.strptime(record[field], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d")
-            except ValueError:
-                pass  # If date is invalid, leave as-is or apply additional handling
-    return record
+# Deduplicate records using a unique key, for example, combining values of certain fields
+# Let's assume fields at indices 1 and 2 make a unique identifier for each record
+unique_data = data_no_header.map(lambda row: ((row[1], row[2]), row)) \
+                            .reduceByKey(lambda x, _: x) \
+                            .map(lambda x: x[1])
+
+# Standardize date formats (assuming date is in the third column)
+def standardize_dates(row):
+    date_index = 3  # Adjust according to the actual date column index in your data
+    try:
+        # Parse and format date to 'YYYY-MM-DD'
+        row[date_index] = datetime.strptime(row[date_index], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d")
+    except ValueError:
+        pass  # Skip reformatting if date is invalid
+    return row
 
 standardized_data = unique_data.map(standardize_dates)
 
-# 4. Clean numerical fields by removing special characters and converting to float
-def clean_numerical_fields(record):
-    numerical_fields = ['fastleddEks', 'energileddEks', 'omregnetAarEks']
-    for field in numerical_fields:
-        if field in record and isinstance(record[field], str):
-            # Remove special characters and convert to float
-            record[field] = float(record[field].replace(',', ''))
-    return record
+# Clean numerical fields (assuming fields at indices 4 and 5 are numeric)
+def clean_numerical_fields(row):
+    numeric_fields = [4, 5]  # Adjust field indices as necessary
+    for index in numeric_fields:
+        if row[index]:
+            try:
+                row[index] = float(row[index].replace(',', '').strip())
+            except ValueError:
+                row[index] = None  # Set to None or a default value if conversion fails
+    return row
 
 final_data = standardized_data.map(clean_numerical_fields)
 
@@ -55,3 +61,4 @@ final_output = final_data.collect()
 sc.stop()
 
 # Result is stored in `final_output`
+print(final_data)
